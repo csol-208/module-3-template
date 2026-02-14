@@ -40,7 +40,7 @@ import os
 # The base_url and api_key will be set as environment variables
 client = OpenAI(
     base_url=os.environ.get("OPENAI_BASE_URL", "https://ellm.nrp-nautilus.io/v1"),
-    api_key=os.environ.get("OPENAI_API_KEY", "your-api-key-here"),
+    api_key=os.environ.get("OPENAI_API_KEY"),
 )
 
 # Pick a model — we have access to several open-source models
