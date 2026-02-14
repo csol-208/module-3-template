@@ -6,7 +6,7 @@
 
 ## Overview
 
-This module spans **3 sessions (8–10)** across Weeks 4–5. Students move from chat-based AI use (Modules 1–2) to **programmatic LLM use**: calling APIs from Python code, extracting structured data from PDFs, and building RAG pipelines over multi-document collections.
+This module spans **3 sessions (8–10)** across Weeks 4–5. Students move from chat-based AI use (Modules 1–2) to **programmatic LLM use**: calling APIs from Python code, extracting structured data from PDFs, and building validated, reusable extraction tools.
 
 The unifying theme is **climate documents** — the messy PDFs that climate professionals actually work with: city climate action plans, corporate sustainability reports, and federal energy planning studies.
 
@@ -16,7 +16,7 @@ The unifying theme is **climate documents** — the messy PDFs that climate prof
 |---------|-------|------------|
 | 8 | Your First LLM Pipeline | OpenAI-compatible API calls, Pydantic structured outputs |
 | 9 | Sustainability Report Parser | PDF parsing, chunking, LLM extraction at scale |
-| 10 | RAG & Multi-Document Analysis | Vector databases, embeddings, cross-document questions |
+| 10 | Validation, Reproducibility & Tools | Multi-model comparison, confidence scoring, reusable pipelines |
 
 ---
 
@@ -28,9 +28,9 @@ module-3-template/
 ├── pyproject.toml                # Python dependencies (managed by uv)
 ├── .gitignore                    # Excludes data/, output/, .venv/
 ├── notebooks/
-│   ├── session8-llm-apis.py            # Session 8: LLM API intro
-│   ├── session9-pdf-extraction.py      # Session 9: PDF → structured data
-│   └── session10-rag-multi-document.py # Session 10: RAG + ChromaDB
+│   ├── session8-llm-apis.py                # Session 8: LLM API intro
+│   ├── session9-pdf-extraction.py          # Session 9: PDF → structured data
+│   └── session10-validation-and-tools.py   # Session 10: Validation & tools
 └── data/                         # Created by download_data.sh (not in git)
     ├── climate-action-plans/     # 7 city/state/international PDFs
     ├── corporate-sustainability/ # 4 tech/energy company reports
@@ -90,7 +90,7 @@ uv run python notebooks/session8-llm-apis.py
 
 `uv run` activates the virtual environment automatically — no need to manually activate it.
 
-Key packages: `pymupdf` (PDF parsing), `openai` (API client), `pydantic` (schemas), `langchain` + `langchain-text-splitters` (chunking), `chromadb` (vector DB), `sentence-transformers` (local embeddings).
+Key packages: `pymupdf` (PDF parsing), `openai` (API client), `pydantic` (schemas), `langchain-text-splitters` (chunking), `pandas` (data tables).
 
 ### 3. API Configuration
 
@@ -189,36 +189,41 @@ The code uses the standard `openai.OpenAI(base_url=..., api_key=...)` pattern, w
 
 ---
 
-### Session 10: RAG & Multi-Document Climate Policy Analysis
+### Session 10: Validation, Reproducibility & Building Tools
 
-**File**: `notebooks/session10-rag-multi-document.py`
+**File**: `notebooks/session10-validation-and-tools.py`
 
-**Learning arc**: Embed all docs → Vector DB → Ask questions → Structured cross-doc extraction → Ambition ranking
+**Learning arc**: Can you trust AI-extracted data? → Multi-model comparison → Reproducibility → Confidence scoring → Reusable tool → Multi-document extraction
 
 **Parts:**
 
-1. **Load All Documents** — Processes all 11 climate + energy PDFs into chunks. This is the "index everything once" step. ~3000+ chunks total.
+1. **Setup** — Loads a city climate action plan (Oakland ECAP), defines a `CityClimatePlan` Pydantic schema with 13 fields (targets, timelines, strategies, equity). Different document type than Session 9's corporate reports.
 
-2. **Embeddings + ChromaDB** — Uses `sentence-transformers` (`all-MiniLM-L6-v2`) to embed locally — no API calls for this step. Chunks are stored in ChromaDB's persistent store. Takes 2–5 minutes for the full corpus. Students learn: embeddings are just vectors; similar text → similar vectors.
+2. **Multi-Model Comparison** — Sends the same text chunk to `qwen3` and `glm-4.7`. Compares field-by-field. Key teaching moment: the models disagree on fields like `ghg_reduction_target` (qwen3: "36% by 2020", glm-4.7: "83%") — both are real numbers from the document, but at different time horizons. Disagreements reveal ambiguity.
 
-3. **RAG Queries** — The `rag_query()` function: embed question → find top-k similar chunks → send to LLM with context. Three example questions span the document collection:
-   - GHG reduction targets (hits city CAPs)
-   - Renewable energy goals (hits both city and federal docs)
-   - Building electrification (hits specific city plans)
+3. **Reproducibility** — Same model, same input, 3 runs. Even with `temperature=0.0`, some fields vary. Students learn that LLM extraction is fundamentally non-deterministic and needs to be treated as such.
 
-   **Key point**: the LLM never sees the full documents. It only sees the 6–8 most relevant chunks. This is why RAG scales.
+4. **Confidence Scoring** — A `score_confidence()` function that combines three signals:
+   - Multi-model agreement (0–2 points)
+   - Run-to-run stability (0–2 points)
+   - Source text grounding — is the value found verbatim in the PDF? (0–2 points)
+   
+   Fields are classified HIGH/MEDIUM/LOW. This is the key conceptual contribution of the session.
 
-4. **Structured Cross-Document Extraction** — Defines `CityClimateTarget` schema and applies it per-document using `where={"source": filename}` filtering in ChromaDB. This combines RAG retrieval with structured output — the most powerful pattern in the module.
+5. **Full-Context vs. Chunked Extraction** — With 262K token context windows, you can send entire PDFs in one shot. Students compare single-call extraction against the chunked approach from Session 9. Discussion: when does each approach win?
 
-5. **Ambition Analysis** — All extracted targets sent to the LLM for comparative ranking. The model produces an analytical narrative comparing jurisdictions. Good discussion: is this analysis reliable? What would you check?
+6. **Reusable `extract_document()` Tool** — Refactors all the extraction logic into a schema-agnostic function: give it any PDF path + any Pydantic BaseModel class → structured data + metadata + validation notes. This is the "build a capability, not just an analysis" moment.
 
-6. **Energy Futures Questions** — RAG queries against the federal reports: DOE solar projections, NREL electrification barriers, EIA natural gas outlook. Demonstrates that the same RAG infrastructure works across very different document types.
+7. **Multi-Document Extraction** — Applies `extract_document()` across all 7 city climate action plans. Builds a comparison DataFrame of targets, timelines, and strategies.
+
+8. **Validation Report** — Per-document audit: coverage, missing fields, validation warnings. Students see the overall extraction quality across the corpus.
 
 **Instructor notes:**
-- ChromaDB persist path is `output/vectordb/` — if students re-run, they need to delete this or the script will error on duplicate collection creation (the `try: delete` block handles this)
-- The embedding step is the most time-consuming part (~3–5 min). Consider pre-building the vector DB for in-class use
-- The `where={"source": filename}` filter is crucial — it turns a general RAG system into a per-document extractor. Worth highlighting.
-- The ambition analysis is intentionally subjective to provoke discussion about LLM reasoning vs. human judgment
+- The multi-model comparison produces genuinely interesting disagreements — Oakland has targets at 2020, 2030, and 2050, and the models pick different ones. This is not a bug; it reveals real ambiguity in policy documents.
+- Run-to-run variability is real but usually small (~75% of fields are stable). Good discussion: is 75% acceptable for research? For policy analysis?
+- The full-context extraction of the IPCC SPM (50 pages, ~56K tokens) produces remarkably good results in a single API call. This is the strongest argument against RAG for many use cases.
+- The `extract_document()` function is genuinely reusable — students can use it in their assessments with custom schemas
+- Processing all 7 PDFs takes several minutes; consider running 2–3 in class and letting students extend
 
 **Approximate time**: 60–75 minutes active coding, 15–20 minutes discussion
 
@@ -229,11 +234,9 @@ The code uses the standard `openai.OpenAI(base_url=..., api_key=...)` pattern, w
 All exercises use [NRP-managed LLMs](https://nrp.ai/documentation/userdocs/ai/llm-managed/) — frontier-class open-weight models hosted on shared infrastructure.
 
 - **Structured output reliability**: JSON mode works well. Reasoning models (`qwen3`, `glm-4.7`) can return `content: None` if thinking consumes all tokens — the notebooks disable thinking for JSON extraction to prevent this.
-- **Extraction accuracy**: Expect ~80–90% accuracy on numeric extraction with `qwen3`/`glm-4.7`. Validation exercises teach students to verify results.
+- **Extraction accuracy**: Expect ~80–90% accuracy on numeric extraction with `qwen3`/`glm-4.7`. Session 10's validation exercises teach students to verify results.
 - **Speed**: Response times vary with load. Expect 5–30 seconds per request. The notebooks include `time.sleep()` for rate limiting.
 - **`max_tokens`**: Per [NRP docs](https://nrp.ai/documentation/userdocs/ai/llm-managed/), do NOT specify `max_tokens` unless required. If you must, keep it under half the context length. The notebooks omit `max_tokens` for best results.
-- **Embeddings**: `all-MiniLM-L6-v2` runs locally on CPU. No API cost for indexing.
-- **ChromaDB**: Runs in-process, no server needed. Persists to disk.
 
 ---
 
@@ -250,11 +253,11 @@ The three sessions build directly toward this:
 | LLM API usage | Session 8 (core pattern), used throughout |
 | Structured outputs / Pydantic | Sessions 8–9 (schemas, JSON mode) |
 | PDF processing | Session 9 (PyMuPDF, chunking) |
-| Multi-document comparison | Sessions 9–10 (aggregation, RAG) |
-| Validation | Session 9 (sanity checks, source tracing) |
+| Multi-document comparison | Sessions 9–10 (aggregation, cross-document tool) |
+| Validation & reproducibility | Session 10 (multi-model, confidence scoring) |
 | JSON/CSV output | Sessions 9–10 (both save to `output/`) |
 
-Students can extend the Session 9 pipeline for their assessment — add more companies, richer schemas, better validation, or combine with the RAG approach from Session 10.
+Students can extend Session 9's pipeline or Session 10's reusable `extract_document()` tool for their assessment — add more companies, richer schemas, better validation, or apply to new document types.
 
 ---
 
@@ -266,8 +269,7 @@ Students can extend the Session 9 pipeline for their assessment — add more com
 | API keys not set | Notebooks show clear error on first cell; env vars documented above |
 | Rate limiting | `time.sleep(0.5)` between extraction calls; `max_chunks` controls volume |
 | Malformed JSON from LLM | `try/except` around `json.loads()`; students learn this is expected |
-| Large files slow to embed | `BATCH_SIZE=100` for ChromaDB insertion; can pre-build the vector DB |
-| ChromaDB "collection exists" error | Delete block at top of Session 10 handles re-runs |
+| NRP endpoint slow/down | API response times vary; if calls time out, reduce scope or try later |
 | Students unfamiliar with `# %%` format | First cell of Session 8 explains the pattern; just click "Run Cell" |
 
 ---
@@ -279,5 +281,6 @@ Ideas for student projects or additional exercises:
 - **Add more companies**: Download Microsoft, Meta, Shell reports and run the same pipeline
 - **Temporal analysis**: Compare a company's 2020 vs 2023 reports — are targets getting more or less ambitious?
 - **Cross-validate**: Compare LLM-extracted numbers against manually verified databases (CDP, Net Zero Tracker)
-- **MCP integration**: Wrap the extraction pipeline as an MCP tool that a chat agent can call
+- **MCP integration**: Wrap Session 10's `extract_document()` as an MCP tool that a chat agent can call
+- **RAG exploration**: Add ChromaDB + sentence-transformers for vector search over the full corpus — useful if working with many more documents
 - **Utility IRPs**: The `utility-irps` directory has federal energy reports; actual utility IRPs from PacifiCorp, Duke, etc. would be excellent hard-mode additions if stable URLs can be found
