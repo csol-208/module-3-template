@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "CSOL 208 Module 3: text as data — are tech companies backing away from their climate pledges?"
 requires-python = ">=3.12"
 dependencies = [
+    "ipykernel>=7.4.0",
     "openai>=2.20.0",
     "openpyxl>=3.1.5",
     "pandas>=3.0.0",
