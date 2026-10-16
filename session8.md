@@ -1,10 +1,12 @@
-# Session 8: From Chat to Code
+# Session 8: From Reports to Paragraphs
 
 ## The big idea
 
-You already know how to ask an AI a question about a document. Upload a PDF, type a question, get an answer. That works — but it only works once, for one document, and you can't build on it.
+Between 2019 and 2021, Google, Microsoft, Amazon, Meta and Apple each made headline climate pledges. Google said it had been carbon neutral since 2007 and would run on carbon-free energy around the clock by 2030. Microsoft promised to be carbon negative by 2030. Amazon and Meta promised net zero. Since then, the energy demands of AI have grown very quickly.
 
-Today you'll learn to do the same thing from code. That means you can do it a thousand times. You can do it on a folder full of documents. You can collect the answers in a table instead of copying and pasting.
+**Are these companies backing away from their pledges?** In this module you'll answer that from the companies' own words: 37 annual environmental reports, about 3,200 pages in all.
+
+Nobody reads 3,200 pages to answer one question. Today you'll turn the reports into a table with one row per paragraph, see what simple word counts can and cannot tell you, and make your first requests to two kinds of AI model from code.
 
 You won't write the code yourself — your coding agent will. Your job is to tell it what you want, check that it's doing the right thing, and think critically about the results.
 
@@ -12,151 +14,118 @@ You won't write the code yourself — your coding agent will. Your job is to tel
 
 ## Before you start
 
-Make sure your workspace is set up:
-
-1. You should have the `module-3-template` folder open in VS Code
-2. The PDFs should be downloaded (run `bash download_data.sh` in the terminal if you haven't)
-3. Run `uv sync` in the terminal to install Python packages
-4. Set your credentials in the terminal. These three lines tell Python where to find the AI model and how to authenticate — like a username and password, but for code:
+1. Open the `module-3-template` folder in VS Code.
+2. In the terminal, run `bash download_data.sh`. This downloads the reports (about 500 MB) into `data/reports/`. The list of reports, and the year each one covers, is in `reports.csv`.
+3. Run `uv sync` to install the Python packages.
+4. Set your OpenRouter key in the terminal. This is the same key you use for your coding agent:
 
 ```bash
-export OPENAI_BASE_URL="https://ellm.nrp-nautilus.io/v1"
-export OPENAI_API_KEY="your-key-here"
-export OPENAI_MODEL="qwen3"
+export OPENROUTER_API_KEY="your-key-here"
 ```
 
-(These are called "environment variables" — they're just settings that your code can read. You set them once per terminal session.)
+(This is an "environment variable": a setting your code can read without the key ever being written into a file. Never paste the key into your code.)
 
-If any of this doesn't make sense, ask your coding agent: *"Help me set up the environment variables for the NRP LLM endpoint."*
+**A note on years.** Companies name their reports differently. Google's "2024 Environmental Report" describes 2023. Microsoft skipped a "2023" report. `reports.csv` has a `data_year` column with the year each report actually describes. Use it for any plot over time.
 
 ---
 
-## Task 1: Say hello to the model
+## Task 1: What the computer sees in a PDF
 
-**What you're doing:** Making your first request to an AI model from Python code. Instead of typing into a chat window, your code will send a message and get a response back.
-
-A quick vocabulary note: **API** stands for "application programming interface." It's just a way for code to talk to a service — in this case, your Python code talking to the AI model. Think of it like a phone number your code can call. You don't need to understand the internals; just know that "calling the API" means "sending a request to the model from code."
+**What you're doing:** Google's 2024 report says, on page 41, that the company is "no longer maintaining operational carbon neutrality." You'll find that sentence the way a program would.
 
 **Ask your coding agent to:**
 
-Create a Python script that connects to the AI model using the OpenAI library, sends a simple climate-related question (like "What are the main sources of greenhouse gas emissions?"), and prints the response.
+Open `data/reports/google/google-2024.pdf` with the PyMuPDF library, print the text of page 41, and then check whether the exact phrase "no longer maintaining operational carbon neutrality" appears in that text.
+
+**Checkpoint:** You should see the sentence on the page, but the search should say **it isn't there**. Ask your agent why. (The PDF breaks lines in the middle of the sentence. Collapsing line breaks and extra spaces into single spaces fixes it.)
+
+**Think about:** If an exact search fails on a sentence you can see with your own eyes, what else might a simple search miss?
+
+---
+
+## Task 2: One row per paragraph
+
+**What you're doing:** Building the dataset for the whole module: a table where each row is one paragraph, with columns for company, report, data year, page number and text.
+
+**Ask your coding agent to:**
+
+Loop over every report listed in `reports.csv`, split each page into paragraphs, and save all paragraphs as `output/paragraphs.parquet`. Drop fragments shorter than 200 characters (headings, captions, page numbers). Then show how many paragraphs each report produced, as a table with companies as columns and years as rows.
 
 **Important details to mention:**
-- The connection details and key should come from environment variables (the ones you set in the previous step), not pasted directly into the code
-- The model name should also come from an environment variable
-- This is an OpenAI-compatible API, not the actual OpenAI service
+- PyMuPDF can return a page's text as "blocks" with their position on the page. Most blocks are paragraphs.
+- Some PDFs store *every line* as its own block. Ask your agent to merge a block into the one above it when they line up on the left and the gap between them is less than a line.
 
-**Checkpoint:** You should see a text response printed in your terminal — a paragraph answering your climate question. If you get an error about authentication or connection, check your environment variables.
+**Checkpoint:** About 11,000–12,000 paragraphs. Meta's reports should produce over a hundred paragraphs each. If Meta has only a handful, the line-merging step isn't working: show your agent page 9 of `meta-2023.pdf`.
 
-**Think about:** What you just did is the same as typing into ChatGPT — but from code. Why does that matter? What can you do with this that you couldn't do in a chat window?
-
----
-
-## Task 2: Get structured data, not paragraphs
-
-**What you're doing:** When you ask an AI a question in chat, you get a paragraph. Paragraphs don't go into spreadsheets. Now you'll tell the AI exactly what *shape* you want the answer in — and get back labeled fields (like a filled-in form) instead of prose.
-
-Two vocabulary notes:
-- **JSON** (pronounced "JAY-son") is a standard format for structured data. Instead of a paragraph, you get something like `{"company": "Apple", "target_year": 2030}` — labeled fields with values. It's what lets you put AI outputs into tables and spreadsheets.
-- A **schema** is a template that defines which fields you want and what type each one is (text, number, etc.). Think of it as designing the columns of your spreadsheet before you start filling it in. We'll use a Python library called **Pydantic** to define schemas — your coding agent knows how to use it.
-
-**Read this text:**
-
-> *Apple has committed to becoming carbon neutral across its entire supply chain and product life cycle by 2030, using a 2015 baseline. The commitment covers Scope 1, 2, and 3 emissions. Apple has already achieved carbon neutrality for its global corporate operations.*
-
-If you were building a table comparing different companies' climate commitments, what columns would you need? Probably something like: company name, what they committed to, target year, baseline year, which emission scopes are covered.
-
-**Ask your coding agent to:**
-
-Define a data schema for a company's climate commitment. It should include:
-- Company name (text, required)
-- Commitment description — what they actually pledged (text)
-- Target year (number, might not be mentioned)
-- Baseline year (number, might not be mentioned)
-- Which emission scopes are covered (text, might not be mentioned)
-- Whether they claim to have already achieved any milestone (text, might not be mentioned)
-
-Then send the Apple text above to the model and extract data matching this schema. The model should return structured data (JSON), not a paragraph.
-
-**Important details to mention to your agent:**
-- Use `response_format={"type": "json_object"}` — this tells the model to respond with labeled fields instead of prose
-- Put the schema description in the system prompt so the model knows what fields to extract
-- The model is a "reasoning" model that does internal thinking before answering. For structured data extraction, disable that thinking with: `extra_body={"chat_template_kwargs": {"thinking": False}}`
-- Don't set `max_tokens`
-- Use `temperature=0.0` — this makes the model's output as consistent as possible (lower temperature = less randomness)
-
-**Checkpoint:** You should get back structured data with labeled fields, not a paragraph. The target year should be 2030. The baseline year should be 2015. Scopes should mention 1, 2, and 3.
-
-If you got a paragraph instead of structured data, or if the model returned nothing, make sure JSON mode and disable-thinking are both set.
-
-**Think about:** Look at the `baseline_year` field. Is 2015 actually in the text? (Yes.) What if the text hadn't mentioned a baseline year — would the AI leave it blank, or make one up? This is exactly the problem we'll wrestle with all module.
+**Think about:** Google's 2021 and 2022 reports produce far fewer paragraphs than other years. Open one. Why? What will that do to any count you make over time?
 
 ---
 
-## Task 3: What happens with ambiguous text?
+## Task 3: Word counts over time
 
-**What you're doing:** The Apple text was clean and direct. Real documents are messier. Let's see what happens.
-
-**Try this text:**
-
-> *Google has maintained carbon neutrality for its global operations since 2007 through the purchase of carbon offsets. In 2020, the company set a goal to operate on 24/7 carbon-free energy at every data center by 2030. Google's long-term aspiration is to achieve net-zero emissions across all operations and value chain by 2030.*
+**What you're doing:** The simplest kind of text analysis: counting words. You'll track how often each company uses the language of its pledges.
 
 **Ask your coding agent to:**
 
-Run the same extraction on this Google text using the same schema.
+For each company and data year, compute the share of paragraphs (per 100 paragraphs) that mention each of these terms: "carbon neutral", "net zero", "carbon negative", "24/7" (as in 24/7 carbon-free energy), "offset", and "AI". Plot one small panel per term with a line per company, and save the figure to `output/figures/`.
 
-**Checkpoint:** You should get results — but look carefully. Google claims *both* "carbon neutral since 2007" *and* "net-zero by 2030." Those are different things. What did the model pick for the target year? What did it pick for the commitment description? Did it capture both claims or just one?
+**Important detail:** Ask for counts *per 100 paragraphs*, not raw counts. Reports differ a lot in length.
 
-**Think about:** This is deliberately ambiguous. There's no single "right" answer for `target_year` here — 2007 and 2030 are both defensible. This is why structured extraction from real documents is hard: the AI has to make choices, and you need to understand what choices it made.
+**Checkpoint:** Google's "carbon neutral" line should fall to almost nothing in its later reports, and "AI" should climb for every company except Apple.
+
+**Think about:** Print the Google paragraphs that still mention "carbon neutral" after 2022 and read them. Is the company *claiming* carbon neutrality, or *talking about* it? Microsoft mentions "AI" a lot in 2020, years before the AI boom. Why? (Read some of those paragraphs.) What can a word count not tell you?
 
 ---
 
-## Task 4: Ask a different model the same question
+## Task 4: A first request to a language model
 
-**What you're doing:** Different AI models sometimes extract different things from the same text. If two models disagree, that tells you the information is ambiguous — you need to check by hand.
+**What you're doing:** Sending a paragraph to a large language model from code, rather than pasting it into a chat window.
+
+A quick vocabulary note: an **API** is a way for code to talk to a service. **OpenRouter** is a service that gives one key access to hundreds of AI models. Your code uses the standard "OpenAI-compatible" interface, pointed at OpenRouter's address.
 
 **Ask your coding agent to:**
 
-Run the same extraction on the Google text, but using the model `glm-4.7` instead of `qwen3`.
+Connect to OpenRouter with the OpenAI Python library (base URL `https://openrouter.ai/api/v1`, key from `OPENROUTER_API_KEY`) and ask the model `deepseek/deepseek-v4-flash` to summarize, in one sentence, what the Google page 41 paragraph says about Google's climate goals.
 
-**Important detail:** `glm-4.7` requires a slightly different setting to disable thinking — it uses `extra_body={"chat_template_kwargs": {"enable_thinking": False}}` (note: `enable_thinking` instead of `thinking`). Tell your agent to handle both models correctly.
+Then ask for **structured output** instead: define a schema with the fields `goal` (text), `target_year` (a number, may be missing) and `status` (one of: new, reaffirmed, progress, harder, revised, dropped), and get the model to fill it in for the same paragraph.
 
-**Checkpoint:** Compare the two results side by side. Did both models pick the same target year? The same commitment description? The same scopes?
+A **schema** is a template that names the fields you want and their types: the columns of your future table. Your agent will use a Python library called Pydantic to define it.
 
-**Think about:** When two models agree, that's a good sign. When they disagree, it doesn't mean one is "wrong" — it often means the source text is genuinely ambiguous. Which fields had the most agreement? Which had the least?
+**Important details to mention:**
+- Use `temperature=0` to make answers as consistent as possible.
+- Use the `client.chat.completions.parse` method with the schema as the `response_format`.
+
+**Checkpoint:** The one-sentence summary is free text. The structured version is a set of labelled fields, and `status` should be "revised" or "dropped".
+
+**Think about:** Which version could you put in a spreadsheet? Which one tells you more?
 
 ---
 
-## Task 5: Process multiple companies
+## Task 5: A first request to a decision model
 
-**What you're doing:** The whole point of doing this from code is scale. Let's extract from three companies in a loop and build a comparison table.
-
-**Here are three text passages:**
-
-> **Amazon:** *Amazon's Climate Pledge commits the company to reaching net-zero carbon emissions by 2040 — 10 years ahead of the Paris Agreement. The commitment covers the company's full business operations, including the transportation network, packaging, and buildings.*
-
-> **BP:** *BP's new strategy aims to become a net zero company by 2050 or sooner, covering Scope 1 and 2 emissions from operations. BP also aims to cut the carbon intensity of the products it sells by 50% by 2050, addressing a portion of its Scope 3 emissions.*
-
-> **Apple:** *Apple has committed to becoming carbon neutral across its entire supply chain and product life cycle by 2030, using a 2015 baseline. The commitment covers Scope 1, 2, and 3 emissions.*
+**What you're doing:** Meeting a different kind of model. A **decision model** never writes text. You give it a text and a typed question, and it gives back a *probability*. We'll use Jev, served through OpenRouter with the same key.
 
 **Ask your coding agent to:**
 
-Loop through all three passages, extract structured data from each using the same schema, and put the results into a table (using Python's `pandas` library, which is a standard tool for working with tabular data). Print the table.
+Write a function `decide(text, questions)` that sends a request to `https://openrouter.ai/api/v1/systemone` with your OpenRouter key, the model `~typesafe/jev-latest`, the text as `state`, and a dictionary of questions. Ask Jev this yes/no question (Jev calls yes/no questions `noul`) about the Google paragraph:
 
-**Checkpoint:** You should see a table with 3 rows (Amazon, BP, Apple) and columns for each field. Target years should be 2040, 2050, and 2030 respectively.
+> Does this paragraph say the company has dropped, narrowed, delayed or stopped a climate goal or claim it previously made?
 
-**Think about:** You just did in a few seconds what would take someone 15 minutes copying and pasting from a chat window. And this was only 3 companies. The exact same pattern works for 50 or 500 — which is what we'll do with real PDFs in Session 9.
+Then ask the same question about Meta's 2020 paragraph announcing its net zero goal (search the table for "most ambitious goal yet").
+
+Print the probabilities, the time each request took, and the cost (Jev reports it in `usage.cost`).
+
+**Checkpoint:** A high probability for Google (around 0.9) and a low one for Meta (near 0). Each request should take well under a second and cost a tiny fraction of a cent.
+
+**Think about:** The language model took a few seconds and gave you words to read. Jev took a fraction of a second and gave you a number. Next session you'll ask Jev questions about all 11,000+ paragraphs. Why would that be impractical with a language model? What do you give up by getting only a number?
 
 ---
 
 ## What you built today
 
-- A connection to an AI model from code (not a chat window)
-- A schema that defines exactly what data you want — the columns of your table
-- Structured extraction that returns labeled fields, not paragraphs
-- A multi-model comparison that reveals ambiguity in source text
-- A batch process that extracts from multiple sources into a comparison table
+- A dataset of every paragraph in 37 reports, with company, year and page.
+- Word-count trends, and a sense of what word counts miss.
+- A request to a language model, returning free text and then structured fields.
+- A request to a decision model, returning a probability.
 
-The code your agent wrote is the foundation for everything in Sessions 9 and 10.
-
-**Save your work.** Make sure the Python file your agent created is saved in your workspace. You'll build on these patterns next session.
+**Save your work.** Next session builds on `output/paragraphs.parquet`.

@@ -1,81 +1,82 @@
-# Module 3: Getting Real Data Out of Real Documents
+# Module 3: Text as Data
 
-## The Problem
+## The question
 
-Most of the world's climate information lives in PDFs. City climate action plans. Corporate sustainability reports. Federal energy studies. Regulatory filings. 
+Between 2019 and 2021, the largest tech companies made some of the most ambitious corporate climate pledges ever announced:
 
-You've probably already used ChatGPT or Claude to ask questions about a document — upload a PDF, ask "what are Google's Scope 1 emissions?", get an answer. That works. But it doesn't scale, it's not reproducible, and you can't build on it.
+- **Google** said it had been carbon neutral since 2007, and would run every data center on carbon-free energy, every hour of every day, by 2030.
+- **Microsoft** promised to be carbon negative by 2030: removing more carbon than it emits.
+- **Amazon** co-founded The Climate Pledge: net zero by 2040.
+- **Meta** promised net zero across its value chain by 2030.
+- **Apple** promised a carbon neutral business and products by 2030.
 
-What if you need to:
+Since then, the energy demands of AI have grown faster than almost anyone expected. Data centers need power, and building them needs steel and concrete.
 
-- Compare emissions targets across **50 cities** to find which have the most ambitious plans?
-- Track whether Apple, Google, Amazon, and BP are actually making progress on their climate commitments — every quarter, automatically?
-- Check whether the numbers a company puts in their sustainability report actually add up?
-- Build a tool that anyone in your organization can run on the next batch of reports?
+**Are these companies backing away from their climate pledges?**
 
-You can't do that by uploading PDFs to a chat window one at a time and copy-pasting answers into a spreadsheet.
+Journalists have reported pieces of the answer. In this module you'll build your own answer from the companies' own words: 37 annual environmental reports, about 3,200 pages, published between 2018 and 2026.
 
-## What You'll Learn
+## Why this is a data problem
 
-### Write code that reads documents for you
+You could read one report carefully. You can't read 37 carefully, and you can't compare them consistently by hand. Changes are often quiet: a claim stops appearing, a boundary is redrawn in a footnote, "goal" becomes "moonshot".
 
-By the end of this module, you'll be able to point a Python script at a folder of PDFs and get back a clean CSV comparing every company's emissions, targets, and renewable energy claims. The same pipeline that takes you an hour per document will process a hundred documents overnight.
+So we treat the text as data. Every paragraph becomes a row in a table. Then we ask questions of every row and analyse the answers like any other dataset.
 
-### Get structured data, not paragraphs
+## What you'll learn
 
-When you ask ChatGPT about a sustainability report, you get a paragraph. When you write code to do it, you get a number in a column. You define exactly what fields you want — Scope 1 emissions, target year, baseline year, renewable energy percentage — and the AI fills in the table. If a field isn't in the document, you get a null, not a hallucinated guess buried in prose.
+### Turn documents into data
 
-### Know when the AI is wrong
+You'll turn PDFs into a table of paragraphs and see what goes wrong along the way: sentences broken across lines, pages stored line by line, garbled text. You'll count words over time, and see why a word count can't tell a pledge from a retreat.
 
-This is the part most people skip. LLMs confidently produce numbers that aren't in the source document. Your pipeline will include validation: Do the Scope 1 + Scope 2 numbers add up to the reported total? Is Scope 3 really smaller than Scope 1? (It shouldn't be.) Did two different chunks of the same report give you contradictory numbers? You'll build checks that flag problems automatically, so you know which extracted data to trust and which to verify by hand.
+### Code text with a decision model
 
-### Build tools, not just run scripts
+A **decision model** reads a text and answers a typed question with a probability, in a fraction of a second, for a fraction of a cent. You'll design the questions:
 
-There's a difference between writing a one-off script and building something reusable. By the end of the module, you'll have built a **document analysis tool** — a function you can call on any new PDF that returns structured data in a consistent format. You'll understand how to wrap AI capabilities into tools that other people (or other AI agents) can use.
+- **yes/no:** Does this paragraph say a goal has become harder to reach?
+- **category:** Is this paragraph announcing a goal, reporting progress, admitting a setback or revising a goal?
+- **scale:** How specific is this commitment, from vague aspiration to quantified target with milestones?
 
-### Understand what's happening under the hood
+Each kind of question gives a different kind of data and a different kind of plot. How you word a question changes the answer, and finding out how is a large part of the module.
 
-You won't just use AI — you'll understand the mechanics well enough to debug it when it fails. Why does the same prompt give different results on different models? Why does breaking a document into chunks sometimes help and sometimes hurt? Why do some PDFs extract cleanly and others come out as garbage? These aren't academic questions — they determine whether your pipeline works or doesn't.
+### Extract records with a language model
 
----
+A **language model** can fill in a detailed form (a schema) for each goal: what it is, its target year, what's happening to it, and a quote as evidence. It's slower and more expensive than a decision model, so you'll use the decision model to decide which paragraphs the language model should read.
 
-## Session Overview
+### Know when a model is wrong
 
-### Session 8: From Chat to Code
-
-You already know how to ask an AI a question. Now you'll learn to do it from Python — which means you can do it a thousand times, with the same question, and collect the answers in a spreadsheet.
-
-You'll start with text passages about corporate climate commitments (Apple, Google, Amazon, BP) and extract structured data: company name, target year, what they committed to, which emission scopes are covered. You'll see how different AI models interpret the same text differently — and start to understand why "just trust the AI" isn't a strategy.
-
-**By the end of this session you can**: call an AI model from Python, get structured JSON instead of prose, and process multiple sources in a loop.
-
-### Session 9: Real PDFs, Real Problems
-
-PDFs are messy. Headers and footers get mixed into the text. Tables become scrambled. Charts disappear entirely. This session is where you hit reality.
-
-You'll load corporate sustainability reports (Google, Apple, Amazon, BP), split them into pieces the AI can handle, and extract emissions data, energy metrics, and climate targets. Then you'll aggregate results across the whole document and validate them — checking whether the extracted numbers are internally consistent and in plausible ranges.
-
-**By the end of this session you can**: extract text from PDFs, build an extraction pipeline that processes multi-hundred-page documents, and validate AI-extracted data for reliability.
-
-### Session 10: Can You Trust What the AI Extracted?
-
-The hardest question in AI-assisted data extraction isn't "can I get the numbers out?" — it's "should I believe them?"
-
-In this session you'll run the same extraction with two different AI models and see where they disagree. You'll run the same model twice and see where it gives different answers. You'll build a confidence scoring system that tells you which results to trust and which to double-check. Then you'll take everything you've built and package it into a reusable tool — a function that takes any PDF and any schema and returns structured, validated data.
-
-You'll also test your tool on a new set of documents: city climate action plans from Oakland, Portland, Seattle, Austin, and Ann Arbor. These are fundamentally different from the corporate reports in Session 9 — different formats, different language, different challenges. If your tool works on both, you've built something genuinely useful.
-
-**By the end of this session you can**: assess the reliability of AI-extracted data, score confidence in individual fields, compare extraction across models, and build reusable extraction tools.
+Every tool here is sometimes wrong. You'll label paragraphs yourself and compare your reading with the model's. You'll check that quotes are real. And you'll compare your results with two independent sources: the Science Based Targets initiative and NewClimate Institute. When sources disagree, you'll work out what each one is actually measuring.
 
 ---
 
-## What This Gets You
+## Sessions
 
-After this module, you'll have the skills to take on projects like:
+### Session 8: From Reports to Paragraphs
 
-- **Policy comparison**: Download 20 city climate action plans and build a comparison table of targets, timelines, and strategies — in an afternoon, not a month.
-- **Corporate accountability**: Track whether companies are meeting the commitments in their sustainability reports by extracting and comparing year-over-year data.
-- **Literature synthesis**: Process a set of energy studies and identify where projections agree and disagree.
-- **Automated monitoring**: Build a tool that processes new reports as they're published, extracts key metrics, and flags changes.
+Turn 37 reports into one table of paragraphs. Track how often each company uses the language of its pledges, and find out what word counts miss. Make your first requests to a language model and to a decision model from code.
 
-The goal isn't to replace careful reading — it's to make careful reading possible at scale. You read the 5 reports that matter. The AI reads the other 95 and tells you what's in them.
+**By the end you can:** extract text from PDFs, build a paragraph dataset, and call two kinds of AI model from Python.
+
+### Session 9: Coding Text with a Decision Model
+
+Design a codebook of yes/no, category and scale questions, and ask a decision model to answer them for thousands of paragraphs. Plot how each company's language changes. Label a sample yourself and decide who's right when you and the model disagree.
+
+**By the end you can:** design questions for text coding, explain the trade-offs between kinds of question, summarize coded text in figures, and measure a model against your own reading.
+
+### Session 10: A Ledger of Commitments
+
+Use the decision model to pick out the paragraphs that matter, and a language model to turn each into a structured record of a goal. Check every quote. Link the records across years into a ledger, and compare it with independent assessments.
+
+**By the end you can:** build a filter-then-extract pipeline, verify extracted evidence, and reconcile your results with independent sources.
+
+---
+
+## Tools
+
+- **Your coding agent** writes the code. You direct it and judge the results.
+- **OpenRouter** gives one key access to both models. It's the same key you use for your coding agent.
+- **Jev** (`~typesafe/jev-latest`), a decision model. Coding the whole corpus costs about 30 cents.
+- **DeepSeek V4 Flash** (`deepseek/deepseek-v4-flash`), a language model, for structured extraction.
+
+## After this module
+
+The same approach works on any large body of text where the question is "what does it say, and how has that changed?" Examples include climate action plans from hundreds of cities, comment letters on a proposed regulation, utility filings, news coverage and court decisions. The tools are cheap enough that what limits you is how well you design your questions and how carefully you check the answers.

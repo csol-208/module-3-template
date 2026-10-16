@@ -1,221 +1,158 @@
-# Session 10: Can You Trust What the AI Extracted?
+# Session 10: A Ledger of Commitments
 
 ## The big idea
 
-In Session 9, you built a pipeline that extracts structured data from PDFs. It produced numbers, filled in tables, processed hundreds of pages in minutes. 
+Last session you coded thousands of paragraphs and saw patterns: Google talking more about setbacks, "carbon neutral" disappearing, AI showing up as a cause. The codes show where to look. This session records what each company committed to and what happened to each commitment.
 
-But here's the question you should be asking: **are those numbers right?**
+Today you'll build a **ledger**: one record per goal statement, with the goal, its target year, what the report says is happening to it, and a quote from the report as evidence. Linked across years, the records show which goals persist, which change and which disappear. Then you'll compare your ledger with two independent sources and ask why they differ.
 
-AI models confidently produce numbers that aren't in the source document. They mix up units. They grab a number from a table heading instead of a data cell. They make up plausible-sounding values for fields that simply don't exist in the text.
-
-Today you'll learn to systematically assess trust in AI-extracted data. And then you'll package everything into a reusable tool — something that works on any PDF, not just the ones you've already seen.
+This session uses a pattern that matters well beyond this module: **filter, then extract**. A cheap, fast decision model reads everything. A slower, more expensive language model reads only what the decision model picks out.
 
 ---
 
 ## Before you start
 
-Same setup as Sessions 8–9. You'll be working with the **city climate action plans** this time (a new document type):
-
-```
-data/climate-action-plans/
-├── oakland-ecap-2020.pdf
-├── portland-cap-2015.pdf
-├── seattle-cap-2013.pdf
-├── austin-climate-equity-2021.pdf
-├── annarbor-a2zero-2020.pdf
-├── ca-scoping-plan-2022.pdf
-└── ipcc-ar6-wg3-spm.pdf
-```
-
-These are structurally different from the corporate reports you used in Session 9. They have different language, different formats, different kinds of data. That's intentional — a good tool should work across document types.
+- `output/coded.parquet` (or whatever you saved) from Session 9.
+- `OPENROUTER_API_KEY` set in your terminal.
+- `data/validation/` from `download_data.sh`: the Science Based Targets initiative export (`sbti-companies.xlsx`) and NewClimate Institute's assessment of these five companies (`newclimate-ccrm2025-tech.pdf`).
 
 ---
 
-## Task 1: New document, new schema
+## Task 1: Filter
 
-**What you're doing:** City climate plans contain different information than corporate sustainability reports. Designing a schema forces you to think about what data you actually want — before you start extracting.
+**What you're doing:** Choosing which paragraphs are worth sending to a language model.
 
 **Ask your coding agent to:**
 
-1. Load `data/climate-action-plans/oakland-ecap-2020.pdf` and extract the text
-2. Show you text from a few pages near the beginning (where goals and targets are usually stated)
-3. Create a schema (just like you did in Sessions 8 and 9) for a city climate action plan with fields like:
-   - City name
-   - Plan title
-   - Year published
-   - Primary GHG reduction target (e.g., "80% below 1990 levels by 2050")
-   - Target year
-   - Baseline year
-   - Interim targets (milestones before the main target)
-   - Carbon neutrality or net-zero goal
-   - Renewable energy target
-   - Transportation strategy
-   - Building strategy
-   - Equity commitment
-   - Current total emissions
+From your Session 9 codes, keep paragraphs that state a goal *and* whose role is "announce", "setback" or "revise", or that Jev says drop a goal or make one harder. Show how many paragraphs this keeps per company and year.
 
-Feel free to add or remove fields based on what you see in the document.
+**Checkpoint:** A few hundred paragraphs, out of the 11,000+ you started with.
 
-**Checkpoint:** You should have a schema with 10–15 fields. Most should be marked as optional (might not be present in every plan).
-
-**Think about:** How is this schema different from Session 9's corporate report schema? City plans talk about policy strategies (transportation, buildings, equity) while corporate reports focus on operational metrics (emissions by scope, energy use, water). The schema you design reflects the questions you're trying to answer.
+**Think about:** What might this filter miss? Look at your Session 9 disagreements: would any of the paragraphs you labelled "yes" be dropped here?
 
 ---
 
-## Task 2: Extract — and then extract again with a different model
+## Task 2: Extract a record for every goal
 
-**What you're doing:** Here's your first trust test. If you send the same text to two different AI models, do they extract the same data?
+**What you're doing:** Asking a language model to fill in a schema for each goal in each paragraph.
 
 **Ask your coding agent to:**
 
-1. Find a data-rich chunk from the Oakland plan (use keyword scoring like Session 9)
-2. Send that chunk to `qwen3` and extract data using your schema
-3. Send the *exact same chunk* to `glm-4.7` and extract data
-4. Display the results side by side, field by field, marking which fields agree and which disagree
+Define a schema for one goal, with these fields:
+- `goal`: the goal in a few words
+- `goal_type`: one of net zero, carbon neutral, carbon negative, clean energy, emissions reduction, water, waste, other
+- `target_year` and `baseline_year`: numbers, may be missing
+- `scope`: what the goal covers, such as "Scope 1 and 2" or "value chain", may be missing
+- `status`: one of new, reaffirmed, progress, harder, revised, dropped, **with a one-line definition of each** in the field description (for example, "dropped: says the company has stopped pursuing the goal or making the claim")
+- `evidence`: an exact quote from the paragraph supporting the record
 
-**Important:** Remember that `glm-4.7` uses a different parameter to disable thinking (`enable_thinking` instead of `thinking`). Tell your agent to handle both models correctly.
+A paragraph can mention several goals, so the model should return a *list* of these. Tell the model, in its instructions, to include goals or claims the paragraph says were **dropped, changed or are becoming harder to reach**. Without that sentence, the model records Google's new goal on page 41 of its 2024 report but not the carbon neutrality claim Google gave up. Send each filtered paragraph to `deepseek/deepseek-v4-flash` through OpenRouter, 8 at a time, and save all the records as a table with the company, report, data year and page of each.
 
-**Checkpoint:** Some fields will match exactly (city_name: "Oakland"). Others will disagree. Look carefully at the disagreements.
+**Important details to mention:**
+- Use `client.chat.completions.parse` with the schema, and `temperature=0`.
+- Pass `extra_body={"reasoning": {"enabled": False}}`. This model can "think" before answering, which is slower and doesn't help here.
+- Set `max_tokens=4000` and a timeout of 90 seconds on the client. Once in a while a model gets stuck repeating itself; when we tested this, two paragraphs produced 131,000-token answers and the run took 53 minutes instead of 3.
+- Expect a few failures: the model sometimes returns a value that isn't in your list (we saw `"ongoing"` as a status). Retry, then skip.
+- Save the results to a file and reuse it if it exists.
 
-**Think about the disagreements.** For example, Oakland's plan has targets at multiple time horizons (2020, 2030, 2050). `qwen3` might pick "36% by 2020" as the primary target while `glm-4.7` picks "83% by 2050." Both numbers are real — they're in the document. The models just made different choices about which one is the "primary" target.
-
-This isn't a bug. It's revealing genuine ambiguity in the source text. When experts disagree about what the "primary" target is, that's information you need to know.
+**Checkpoint:** Several hundred goal records, in a few minutes, for well under a dollar.
 
 ---
 
-## Task 3: Same model, same input, three times
+## Task 3: Check the evidence
 
-**What you're doing:** You might expect that running the exact same extraction with the same settings would always give the same answer. It doesn't. Even with randomness turned as low as it goes (`temperature=0.0`), AI models can produce slightly different outputs on different runs. Let's find out how much variation there is.
+**What you're doing:** Language models sometimes produce quotes that sound right but aren't in the text. A made-up quote is not evidence.
 
 **Ask your coding agent to:**
 
-Run the same extraction (same chunk, same model, same schema) three times. Compare the results field by field. Which fields are stable (same answer every time) and which vary?
+For each record, check whether the `evidence` quote appears word for word in its paragraph. Compare only letters and digits, so that spacing, punctuation, curly quotes and PDF quirks (like "ﬁ" stored as one character) don't count as differences. For quotes that fail, also measure how much of the quote *does* appear in the paragraph, in runs of 20 characters or more. Classify each quote as **exact**, **edited** (most of it is there) or **not found**.
 
-**Checkpoint:** You should see something like 70–85% of fields are stable across runs. Common sources of variation: slightly different wording of long text fields, different numbers chosen from the same paragraph.
+**Checkpoint:** About 9 in 10 quotes should be exact. Read every quote that isn't.
 
-**Think about:** If a field gives you a different answer every time you run it, how much should you trust any single run? This is a real issue for using AI-extracted data in research or policy analysis. What's an acceptable level of reproducibility?
+**Think about:** Look at the "not found" quotes. Some are the model *describing* the paragraph ("The paragraph states…") instead of quoting it. For the "edited" ones, was a citation dropped, a sentence trimmed, or two sentences stitched together? Which would be acceptable in a report you'd sign? Use only exact and edited records from here on.
 
 ---
 
-## Task 4: Build a confidence score
+## Task 4: The ledger
 
-**What you're doing:** You now have three signals about each field:
-1. Do two models agree on it? (from Task 2)
-2. Is it stable across multiple runs? (from Task 3)
-3. Does the extracted value actually appear in the source text?
-
-Combine these into a confidence score.
+**What you're doing:** Linking records across years so you can follow each goal over time.
 
 **Ask your coding agent to:**
 
-Create a function that takes a field name, its value, the source text, and the results from Tasks 2–3, and returns a confidence score:
-- **Multi-model agreement** (0–2 points): Did both models extract the same value?
-- **Reproducibility** (0–2 points): Was exactly the same value extracted in all three runs?
-- **Source grounding** (0–2 points): Does the extracted value actually appear word-for-word in the source text?
+1. Identify each goal by company, goal type and target year (for example "microsoft · carbon negative · 2030").
+2. For each goal and data year, keep the most serious status that year's report gives it, in the order new < reaffirmed < progress < harder < revised < dropped. Use only records whose quote was exact or edited.
+3. Save the ledger as `output/ledger.csv`.
+4. Plot it as a timeline: one panel per company, one row per goal, one dot per year, coloured by status.
+5. List goals that appear in at least two earlier reports but not in the company's latest one.
 
-Classify each field as HIGH (5–6 points), MEDIUM (3–4), or LOW (0–2).
+**Important detail:** many goals have no target year. Make sure those still get a key (such as "carbon neutral · no year") rather than being silently dropped. In the plot, include goals stated in at least two reports *plus* any goal ever marked revised or dropped (a dropped goal often appears only once).
 
-Run this on every field from your extraction and display the results.
+**Checkpoint:** The ledger should include Google's carbon neutrality claim marked dropped (2023 data), Amazon's Shipment Zero marked dropped (2022), and Google goals marked revised in recent years. It will also contain mistakes. Find at least two records whose status you disagree with, and read the paragraph.
 
-**Checkpoint:** Simple factual fields (city name, target year) should score HIGH. Interpretive fields (equity commitment, transportation strategy) will likely score MEDIUM or LOW.
-
-**Think about:** Which confidence level is "good enough"? It depends on what you're doing. For a screening analysis ("which cities have net-zero targets?"), MEDIUM is fine. For a research paper claiming "Oakland's 2030 target is 56%," you'd want HIGH — and you'd still verify it by opening the PDF.
+**Think about:** A goal that stops appearing may have been dropped, or the report may simply not repeat it. How would you tell the difference? Check one goal on your list in the company's latest report.
 
 ---
 
-## Task 5: Full document vs. chunks — does it matter?
+## Task 5: Compare with the Science Based Targets initiative
 
-**What you're doing:** In Session 9, you broke documents into chunks because that was the standard approach — AI models used to choke on long inputs. But newer models like qwen3 can handle enormous amounts of text (262,000 "tokens" — roughly 200,000 words, which is longer than most books). That's enough for most entire PDFs in a single request. Does sending the whole document at once produce better results than chunking?
+**What you're doing:** The Science Based Targets initiative (SBTi) checks whether companies' targets are consistent with climate science. It publishes each company's status, including commitments it has removed.
 
 **Ask your coding agent to:**
 
-1. Take a shorter document — `data/climate-action-plans/ipcc-ar6-wg3-spm.pdf` (the IPCC Summary for Policymakers, about 50 pages)
-2. Concatenate all the text into one big string
-3. Send the entire document to the AI in a single call and extract your schema
-4. Also extract from just the top 5 chunks (the Session 9 approach)
-5. Compare the results
+Load `data/validation/sbti-companies.xlsx`, keep the five companies (Alphabet is Google's parent company), and show their near-term and net-zero status, target years and status reason. Then show what each company's *latest report* still says about net zero, carbon neutral and carbon negative goals, from your ledger.
 
-**Checkpoint:** The full-document approach should do well on this document — the IPCC SPM is well-structured and not too long. Compare: did the full-document version find things the chunked version missed? Did the chunked version focus more precisely on specific numbers?
+**Checkpoint:** SBTi lists several of these commitments as "Commitment Removed", while the companies' latest reports still state the goals.
 
-**Think about:** Full-document: one API call, sees everything, but may lose detail in dense sections. Chunked: multiple calls, focuses on the best sections, but may miss document-wide context. There isn't a universal winner — it depends on the document and what you're extracting.
+**Think about:** Is that a contradiction? What does SBTi's status measure, and what does your ledger measure? Note that the SBTi file is a snapshot of *today's* status only: it can't tell you when each change happened.
 
 ---
 
-## Task 6: Build a reusable tool
+## Task 6: Read a whole report at once
 
-**What you're doing:** Up until now, you've been doing one-off analysis. Let's turn this into something anyone can use — a function that takes any PDF and any schema and returns structured, validated data.
-
-**Ask your coding agent to:**
-
-Create a function called `extract_document` that takes:
-- A path to any PDF file
-- A schema class (any schema — the function shouldn't be hardcoded to one specific set of fields)
-- Optionally: which model to use, how many chunks to process
-
-And returns:
-- The extracted data
-- Metadata (which file, how many pages, how many chunks had data, which pages the data came from)
-- Validation notes (did schema validation pass? were extracted values found in the source text?)
-
-The function should automatically:
-- Build the extraction prompt from the schema's field descriptions
-- Score chunks using the field names as keywords
-- Handle the disable-thinking parameter correctly for the chosen model
-- Skip chunks that return no data
-- Merge results from multiple chunks
-
-**Checkpoint:** Test it on one of the city climate action plans. You should get back structured data plus metadata and validation notes. Then test it on one of the corporate reports from Session 9 — does it work with a different schema?
-
-**Think about:** This is the difference between "I ran a notebook once" and "I built a tool." The function doesn't know or care what document you give it or what schema you define. That's powerful. This is the kind of function that an AI coding agent could call as a tool.
-
----
-
-## Task 7: Run across all the city climate plans
-
-**What you're doing:** The real test — apply your tool to all 7 documents in `data/climate-action-plans/` and build a comparison dataset.
+**What you're doing:** NewClimate Institute assessed these same five companies in 2025. Their report is 34 pages, short enough to send to the language model in a single request, with no filtering or chunking.
 
 **Ask your coding agent to:**
 
-1. Loop through all PDFs in `data/climate-action-plans/`
-2. Run `extract_document` on each with your city climate plan schema
-3. Collect results into a comparison table
-4. Print the table showing each city's GHG target, target year, and carbon neutrality goal
-5. Print a validation report: how many fields were extracted per document, any validation warnings
-6. Save the results as JSON and CSV to `output/`
+Extract the text of `data/validation/newclimate-ccrm2025-tech.pdf` and send all of it to the model in one request, with a schema that asks for NewClimate's main criticisms of each company's goals and claims: two to four per company, each with the kind of goal it concerns and the exact sentence from the report making the criticism. Check the quotes as in Task 3.
 
-**Checkpoint:** You should have a table with ~7 rows comparing cities. Some documents will extract cleanly; others will have gaps or warnings. The IPCC document isn't really a "city" — interesting to see how the schema handles it.
+**Checkpoint:** About 20 criticisms. Most quotes should be exact or edited.
+
+**A warning from testing:** NewClimate also gives each company ratings, but they're shown in graphic tables. When we asked the model for the ratings, it returned plausible ones backed by quotes that didn't state them. Ask only for what the text states, and check it.
 
 **Think about:**
-- Which cities have the most ambitious targets?
-- Which documents extracted cleanly and which didn't? Why?
-- How confident are you in any given number in the table? Would you cite it in a report without checking the source PDF?
+- How do NewClimate's criticisms compare with what your ledger shows for each company?
+- When is it better to send a whole document at once, and when is the filter-then-extract pattern better? Think about length, cost, and how much you need to see where each answer came from.
 
 ---
 
-## Wrapping up: What you built this module
+## Task 7: Save and summarize
 
-Across three sessions, you went from "ask ChatGPT a question" to:
+**Ask your coding agent to:**
 
-1. **Programmatic AI access** — calling models from code, not a chat window, which means you can do it at scale
-2. **Structured extraction** — getting data in labeled fields and columns, not paragraphs
-3. **PDF processing** — handling real messy documents, not curated examples
-4. **Validation** — knowing which results to trust and which to verify by hand
-5. **Multi-model comparison** — using disagreement between models as a signal of ambiguity
-6. **Reproducibility testing** — understanding the limits of AI consistency
-7. **A reusable tool** — `extract_document()` works on any PDF with any schema
+Save the goal records as `output/goals.json` and the NewClimate assessments as a CSV. Then write, in your own words, a paragraph answering the module's question for one company of your choice: **is it backing away from its climate pledges?** Use your ledger, your Session 9 plots and the two independent sources, and cite paragraphs by report and page.
 
-The process you built can handle hundreds of climate documents and turn them into a structured dataset. That's a capability that didn't exist before these models — and knowing how to build it, validate it, and trust it appropriately is what separates useful analysis from AI-generated noise.
+---
+
+## Wrapping up: what you built this module
+
+Across three sessions you went from 37 PDFs to:
+
+1. **A paragraph dataset**, and an understanding of what PDF text extraction gets wrong.
+2. **Word counts**, and why a mention isn't a claim.
+3. **A codebook** for a decision model, with yes/no, category and scale questions, and evidence about which kinds of question work.
+4. **Your own labels**, and a record of where you and the model disagreed.
+5. **A ledger of commitments** with verified quotes, built by filtering with one model and extracting with another.
+6. **A comparison** with independent sources, and an account of why they differ.
 
 ---
 
 ## For your assessment
 
-Your Module 3 assessment asks you to submit a working document extraction pipeline that processes climate PDFs and outputs structured data (JSON/CSV). Your submission should demonstrate:
+Your Module 3 assessment asks you to answer a question about a body of climate text using the tools from this module, and to show how you know your answer is right. You can extend this module's question (more companies, more years, a different kind of commitment) or bring a new set of documents. Your submission should include:
 
-- PDF loading and intelligent chunking
-- A Pydantic schema designed for your chosen domain
-- LLM-based structured extraction
-- Validation and confidence assessment
-- Results saved as JSON and/or CSV
-
-You can build on the code your agent wrote during these sessions, extend it to new documents, design richer schemas, or improve the validation. The `extract_document` tool from Task 6 is a strong starting point — customize it for your specific analysis question.
+- the documents and how you turned them into data,
+- the questions you coded, and why you designed them as you did,
+- at least one comparison between your own reading and a model's,
+- figures or tables that answer your question,
+- a check against at least one independent source, and
+- outputs saved as CSV or JSON.

@@ -1,177 +1,178 @@
-# Session 9: Real PDFs, Real Problems
+# Session 9: Coding Text with a Decision Model
 
 ## The big idea
 
-In Session 8, you extracted structured data from short text passages you pasted into your code. That was training wheels. Real climate data lives in PDFs — 100-page corporate sustainability reports, city climate action plans, federal energy studies.
+Last session's word counts showed Google's "carbon neutral" disappearing. But a word count cannot tell a pledge from a retreat. Google still writes "net zero" in 2025, in a section that narrows what the goal covers.
 
-Today you'll build a process that opens a real PDF, pulls out the text, breaks it into manageable pieces, sends those pieces to an AI model, and collects the results into a structured dataset. By the end, you'll have a comparison table across four major companies — the kind of analysis that would take a human analyst a full day.
+Today you'll **code** the paragraphs, the way a social scientist codes interview transcripts: you write questions, a decision model answers them for every paragraph, and you analyse the answers as data.
+
+The questions are yours to design, and the design is the main subject of this session. You'll move from yes/no codes, to categories, to ordered scales, and see what each kind of code can and cannot show. Along the way you'll read paragraphs yourself and decide where the model is wrong.
 
 ---
 
 ## Before you start
 
-Make sure:
-- Your environment variables are set (same as Session 8)
-- The PDFs are downloaded (`bash download_data.sh` if needed)
-- You have these reports in `data/corporate-sustainability/`:
-  - `google-env-2024.pdf`
-  - `apple-env-2024.pdf`
-  - `amazon-sustainability-2023.pdf`
-  - `bp-sustainability-2023.pdf`
+- `output/paragraphs.parquet` from Session 8.
+- `OPENROUTER_API_KEY` set in your terminal.
+- Your `decide()` function from Session 8.
+
+**Cost and time.** Jev charges about 4 cents per million tokens of input (a token is roughly three quarters of a word). Coding the whole corpus as below cost about 30 cents when we tested it. It takes a few minutes if your agent sends several requests at once. Ask your agent to **save every result to a file** and to reuse the file if it exists, so you only pay once.
 
 ---
 
-## Task 1: Look inside a PDF
+## Task 1: The simplest code — does this paragraph state a goal?
 
-**What you're doing:** Before you can extract data from a PDF, you need to see what the AI will actually be working with. When you extract text from a PDF programmatically, the result is far messier than what you see on screen — headers and footers get mixed in, table columns get merged, charts and images disappear entirely.
+**What you're doing:** One yes/no question, asked of every paragraph.
 
 **Ask your coding agent to:**
 
-Open `data/corporate-sustainability/google-env-2024.pdf` using a PDF reading library called PyMuPDF, extract the text from each page, and print the text from page 10.
+Ask Jev this yes/no (`noul`) question about every paragraph in `output/paragraphs.parquet`:
 
-**Checkpoint:** You should see a wall of text. It won't be perfectly formatted — you'll see stray characters, broken table layouts, headers mixed into body text. This is normal. Every PDF is different.
+> Does this paragraph state a climate or energy goal that the company has set for itself?
 
-**Think about:** Look at the raw text. Could you find Google's Scope 1 emissions in here? Probably — but you'd have to scroll through a lot of noise. That's why we need to be strategic about which parts we send to the AI.
+Send 8 requests at a time (your agent will know how to do this with a "thread pool"). Store the probability in a new column, save the table, and print the total cost and time. Then plot a histogram of the probabilities.
+
+**Checkpoint:** Most probabilities should be near 0 or near 1. Somewhere around 15% of paragraphs should be above 0.5.
+
+**Think about:** You need a cut-off to turn a probability into yes or no. Ask your agent to show you a few paragraphs with probabilities between 0.45 and 0.55, and read them. Would you call them goals? Where would you put the cut-off, and why?
 
 ---
 
-## Task 2: Break the document into chunks
+## Task 2: Design a codebook
 
-**What you're doing:** These PDFs are 68–113 pages long — tens of thousands of words. While modern AI models can handle very long inputs, sending the entire document for every question is wasteful and slow. Instead, we break the text into smaller pieces called "chunks" (a few pages each) and only send the most relevant ones to the AI.
+**What you're doing:** A **codebook** is the list of questions you ask of every paragraph, with careful wording. Jev offers three types of question, and each gives a different kind of variable:
 
-**Ask your coding agent to:**
-
-Split the Google report's text into overlapping chunks of about 4,000 characters each, with 200 characters of overlap between consecutive chunks. Use the `RecursiveCharacterTextSplitter` from the `langchain_text_splitters` library (your agent will know how to use this).
-
-Print how many chunks were created, and show the first chunk.
-
-**Checkpoint:** You should get somewhere around 30–60 chunks depending on the document. Each chunk should be a readable block of text, not random fragments.
-
-**Think about:** Why overlap? Because if an important sentence falls right at the boundary between two chunks, the overlap ensures it appears in at least one chunk completely. Try changing the chunk size — what happens with smaller chunks? Larger ones?
-
----
-
-## Task 3: Find the data-rich chunks
-
-**What you're doing:** Most of a sustainability report is narrative text — "we believe in a sustainable future" etc. The numbers you actually want (emissions, targets, energy data) are concentrated in specific sections. Let's find those sections automatically.
+| Type | You define | Jev returns | Example |
+|---|---|---|---|
+| `noul` (yes/no) | a question | probability of "yes" | Does this paragraph say emissions went up? |
+| `choice` | a question and a list of labels, each with a description | one label, plus a probability for every label | What kind of goal is this about: net zero, carbon neutral, clean energy, …? |
+| `score` | a question and an ordered list of levels | a number from 0 to (levels − 1) | How confident does the company sound, from "abandoning the goal" to "on track"? |
 
 **Ask your coding agent to:**
 
-Score each chunk by counting how many data-relevant keywords appear in it. Good keywords: "emissions", "Scope 1", "Scope 2", "Scope 3", "renewable", "target", "GHG", "tCO2", "MWh", "percent", "carbon neutral", "net zero". Show the top 5 highest-scoring chunks with their page numbers.
+Ask Jev a set of questions about the paragraphs that state a goal (probability above your cut-off) or that mention a pledge term ("net zero", "carbon neutral", "carbon negative", "24/7", "100% renewable", "carbon-free", "water positive", "zero waste"). Start with these, and change or add your own:
 
-**Checkpoint:** The highest-scoring chunks should come from the data sections of the report — emissions inventories, target descriptions, energy disclosures. If the top chunks are from the table of contents or executive summary, the keyword list may need adjusting.
+- **yes/no:**
+  - Does this paragraph say the company has dropped, narrowed, delayed or stopped a climate goal or claim it previously made?
+  - Does it say a climate goal has become harder to reach?
+  - Does it say the company's own total emissions went up?
+  - Does it say AI is causing the company's energy use or emissions to grow?
+  - Does it rely on carbon offsets, credits or carbon removal to meet a goal?
+- **choice — role:** What is this paragraph mainly doing? *announce* a goal, report *progress* with numbers, admit a *setback*, *revise* a goal, describe *strategy*, or *other*.
+- **choice — goal type:** Which kind of goal is it mainly about? net zero, carbon neutral, carbon negative, clean energy, water, waste, or none.
+- **score — specificity:** How specific is the commitment? From "vague aspiration with no numbers or dates", through "target year only" and "target year and baseline or scope", to "target year, baseline, scope and interim milestones".
+- **score — tone:** How confident does the company sound about reaching its goals? From "says the goal is at risk or being abandoned" to "confident and on track".
+- **The same idea as specificity, asked differently:** three yes/no questions — does the paragraph give a target year? a baseline year? a numerical target?
 
-**Think about:** This is a simple but effective filter. You *could* send every chunk to the AI, but that's slow and expensive. By pre-filtering, you focus the AI's attention on the parts that actually contain data.
-
----
-
-## Task 4: Design what you want to extract
-
-**What you're doing:** In Session 8, you defined a simple schema (template) with 5–6 fields. A real sustainability report contains much more. Now you'll design a richer schema that captures the data investors and policymakers actually care about.
-
-**Ask your coding agent to:**
-
-Create a Pydantic schema for sustainability report data. (Recall from Session 8: Pydantic is the library that defines the "shape" of the data you want back — which fields, what type each one is, and a description to guide the AI.) Think about what you'd want to compare across companies. Here's a starting point:
-
-- **Emissions data:** Scope 1 emissions, Scope 2 emissions (ideally both market-based and location-based), Scope 3 emissions, total emissions, units (tCO2e usually), reporting year
-- **Energy data:** total energy consumption, renewable energy percentage
-- **Climate targets:** target description, target year, baseline year, scope coverage
-- **Water data** (if you want): total water withdrawal, water consumption
-
-The schema should handle the fact that many fields might not be present in every report — mark fields that might be missing as Optional (your agent will know what this means).
-
-**Checkpoint:** You should have a schema defined with multiple groups of fields. The key is that every field has a description that tells the AI what to look for — clearer descriptions mean better extraction.
-
----
-
-## Task 5: Extract data from one report
-
-**What you're doing:** Now you'll put it all together — load a PDF, chunk it, find the best chunks, send them to the AI, and collect structured data.
-
-**Ask your coding agent to:**
-
-Build a function that:
-1. Takes a PDF path
-2. Loads and chunks the text
-3. Scores chunks and selects the top 8–10
-4. Sends each chunk to the AI with your schema
-5. Merges the results (first non-null value for each field wins)
-6. Returns the combined extraction
-
-Run it on the Google report and print the results.
+All the questions go in one request per paragraph. Save the answers.
 
 **Important details to mention:**
-- Use JSON mode (structured data output) like in Session 8
-- Disable thinking for structured extraction (same as Session 8)
-- Use `temperature=0.0` for consistency
-- Add a short pause (`time.sleep(0.5)`) between requests to avoid overwhelming the server
-- Handle cases where the model returns nothing — just skip that chunk
+- A `choice` question needs `criteria`: a dictionary from each label to a short description.
+- A `score` question needs `criteria`: a list of level descriptions, in order.
+- The question names you choose (the dictionary keys) are not sent to the model. Only the instructions and criteria matter.
 
-**Checkpoint:** You should get back structured data with actual numbers from Google's report. Look for:
-- Scope 2 emissions should be in the millions of tCO2e range
-- Renewable energy percentage should be high (Google is a big renewable buyer)
-- Total energy consumption should be in the millions of MWh range
+**Checkpoint:** About 2,000–2,500 paragraphs coded, one column per question.
 
-If you're getting blanks for everything, the field descriptions in your schema might not be specific enough, or the keyword scoring might not be finding the right chunks.
+**Think about:** Read your yes/no questions again. Is each one about exactly one thing? "Did emissions go up *and* is AI to blame?" is two questions, and Jev reads instructions literally.
 
 ---
 
-## Task 6: Process all four reports
-
-**What you're doing:** The payoff — running the same pipeline across multiple companies and building a comparison dataset.
+## Task 3: Yes/no codes, counted
 
 **Ask your coding agent to:**
 
-Loop through all four reports (Google, Apple, Amazon, BP), run the extraction function on each, and collect the results into a comparison table using `pandas`. Print the table.
+For the four yes/no questions about dropping goals, goals getting harder, emissions rising and AI, count the paragraphs per company and data year where Jev says yes (probability above 0.5). Plot one panel per question, a line per company.
 
-**Checkpoint:** You should have a table with 4 rows and columns for each metric. It will probably take 2–5 minutes to process all four (depending on server speed). Some fields will be blank for some companies — that's normal, not every report includes every metric.
+**Checkpoint:** Google should stand out after 2022 on "harder" and "AI". "Dropped" stays rare for everyone.
 
-**Look for interesting patterns:**
-- Which company reports the highest total emissions?
-- Which company has the most ambitious target year?
-- Does anyone report Scope 3? (Hint: Scope 3 is typically much larger than Scope 1+2, but many companies don't report it)
+**Think about:** "Dropped" is rare. Is that because companies rarely drop goals, or because they rarely *say* so in one paragraph? Ask your agent to print every paragraph Jev says yes to on "dropped". Do you agree with each one?
 
 ---
 
-## Task 7: Validate the results
-
-**What you're doing:** Here's the part most people skip — and the part that matters most. AI models confidently produce numbers that aren't in the source document. You need to check.
+## Task 4: Categories
 
 **Ask your coding agent to:**
 
-Write validation checks for the extracted data:
-- Is Scope 3 > Scope 1? (It almost always should be for large companies)
-- Does Scope 1 + Scope 2 roughly equal the reported total? (If total is reported)
-- Is renewable energy percentage between 0 and 100?
-- Is the target year in the future (or at least after 2020)?
-- Are emissions values in a plausible range? (Millions of tCO2e for large companies, not billions, not hundreds)
+1. Among goal paragraphs, compute the share of each goal type per company and data year, and plot it (one panel per company, a line per goal type).
+2. Make a stacked bar chart of the *role* categories for each company and year.
 
-Run the validation on all four companies and flag any issues.
+**Checkpoint:** Google's "carbon neutral" share should fall sharply. Look at Microsoft's "net zero" share too.
 
-**Checkpoint:** You will almost certainly find issues. That's the point. Maybe one company's emissions are off by a factor of 1000 (unit confusion — tonnes vs. metric tonnes vs. kilotonnes). Maybe the AI pulled a number from a table header instead of a data cell.
-
-**Think about:** This is the most important lesson of the session. The extraction pipeline runs quickly and produces plausible-looking numbers. But "plausible-looking" isn't the same as "correct." How would you verify a number you're unsure about? (Open the PDF, go to the page, and look.)
+**Think about:** How is this different from Session 8's word count? A category forces each paragraph into exactly one box. When might that be wrong, for example a paragraph about both net zero and clean energy? Jev also returns the probability of *every* label. How could you use those instead of the single winning label?
 
 ---
 
-## Task 8: Save your results
+## Task 5: Scales, and how to ask them
+
+**What you're doing:** Comparing two ways of measuring the same idea: one four-level `score` question about specificity, and three narrow yes/no questions (target year? baseline? number?) added up into a 0–3 index.
 
 **Ask your coding agent to:**
 
-Save the extraction results in two formats to the `output/` directory:
-- **JSON** — a structured file that preserves all the detail (nested fields, metadata). Good for archiving and further processing.
-- **CSV** — a simple spreadsheet-compatible table. Good for opening in Excel or Google Sheets.
+1. Make a table comparing the specificity score (rounded) against the 0–3 index.
+2. Show a few paragraphs where the two disagree most.
+3. Make box plots of specificity and of tone, by company.
 
-**Checkpoint:** You should have two files in `output/`.
+**Checkpoint:** The two measures should broadly agree, but not perfectly.
+
+**Think about:** Read the disagreements. Which measure was right? Which version would you trust in a report, and which would you rather explain to a reader? A `score` comes back as an average over the levels (for example 1.6). What does 1.6 mean on a scale whose levels are sentences?
+
+---
+
+## Task 6: One question, three summaries
+
+**What you're doing:** Turning paragraph-level codes into one number per report forces another choice.
+
+**Ask your coding agent to:**
+
+For the "goal has become harder" question, compute three summaries per company and year, and plot them side by side:
+1. the **count** of paragraphs with probability above 0.5,
+2. the **expected count**: the sum of all the probabilities, with no cut-off,
+3. the **share** of goal paragraphs above 0.5.
+
+**Checkpoint:** The three plots tell somewhat different stories.
+
+**Think about:** Long reports have hundreds of paragraphs with small probabilities, and the expected count adds them all up. Which summary would you put in a report, and how would you explain it in one sentence?
+
+---
+
+## Task 7: You versus the model
+
+**What you're doing:** Checking the codes against your own careful reading. This is the most important task of the session.
+
+**Ask your coding agent to:**
+
+Draw a random sample of 20 goal paragraphs, and add these documented paragraphs to it (search the text for the quoted phrase):
+- Google 2024: "no longer maintaining operational carbon neutrality"
+- Google 2025: "adjusted the boundary"
+- Google 2025: "now more complex and challenging"
+- Microsoft 2024: "emissions are up 29.1%"
+- Amazon 2022: "no longer made sense to have a separate"
+
+Save them to a spreadsheet **without Jev's answers**, with empty columns for the four yes/no questions.
+
+**Then label them yourself.** Read each paragraph and mark 1 or 0 for each question. Write a short note wherever you hesitated. Don't let your agent do this part. Your reading is what's being tested.
+
+**Then ask your coding agent to** compare your labels with Jev's answers, and list every disagreement next to its paragraph.
+
+**Think about:**
+- For each disagreement, read the paragraph again. Who was right, you or Jev? Was the question itself unclear?
+- Agreement is easy when most paragraphs are obviously "no". Of the paragraphs *you* said yes to, how many did Jev catch? Of the ones Jev said yes to, how many did you agree with?
+- Rewrite one question to fix a problem you found, re-run it on your sample, and see whether it helps.
+
+---
+
+## Going further (optional)
+
+- **An open model.** Laya is an open-weights decision model that accepts the same requests as Jev. If your instructor gives you a Laya address and key, send it your labelled sample and compare it with Jev and with you.
+- **Your own question.** Design a question about something else you noticed: water, supply-chain emissions, carbon removal, or how companies describe their critics. Code the corpus with it and plot the result.
 
 ---
 
 ## What you built today
 
-- A process that reads real sustainability PDFs and pulls out the text
-- Smart chunking that focuses on the sections most likely to contain data
-- A schema that tells the AI exactly what fields to extract
-- A batch comparison across four major companies
-- Validation checks that flag suspicious results
+- Codes for every paragraph: yes/no, categories and scales.
+- Plots of how each company's language changes over time.
+- A comparison of two ways to measure the same idea.
+- Your own labels, and a careful look at where the model disagrees with you.
 
-Next session, you'll push further: Can you trust these numbers? Do different models agree? What happens when you run the same extraction twice? And you'll turn this process into a reusable tool.
+Next session you'll turn the most important paragraphs into a ledger of each company's commitments, and compare it with independent assessments.
