@@ -15,7 +15,8 @@
 
 ## Content
 
-[Notebook](tech-pledges.ipynb)
+[Notebook](tech-pledges.ipynb)  
+[Rubric](rubric.md)
 
 Between 2019 and 2021, Google, Microsoft, Amazon, Meta and Apple made some of the most ambitious corporate
 climate pledges ever announced. Since then the energy demands of AI have grown very quickly. In this module
